@@ -1,9 +1,7 @@
 from .audio_llm import audio_llm_gemini as audio_llm
-from .audio_llm import audio_llm_qwen
 from langchain_core.tools import tool
 from langchain_core.tools import ToolException
 from typing import Dict
-from omni_agent.config import LOCATION_TOOL
 
 @tool
 def Audio_EventList(video_path: str) -> str:
@@ -46,18 +44,10 @@ def Audio_EventList(video_path: str) -> str:
     * Strictly output a **Markdown bullet list**.
     * Format: `* **MM:SS - MM:SS**: [Concise Description]`
     """
-    if LOCATION_TOOL == "GEMINI":
-        try:
-            return audio_llm(video_path, prompt)
-        except Exception as e:
-            raise ToolException(f"[Audio_EventList error] {type(e).__name__}: {e}")
-    elif LOCATION_TOOL == "QWEN":
-        try:
-            return audio_llm_qwen(video_path, prompt)
-        except Exception as e:
-            raise ToolException(f"[Audio_EventList error] {type(e).__name__}: {e}")
-    else:
-        raise ToolException(f"[Audio_EventList error] Invalid audio tool: {LOCATION_TOOL}")
+    try:
+        return audio_llm(video_path, prompt)
+    except Exception as e:
+        raise ToolException(f"[Audio_EventList error] {type(e).__name__}: {e}")
 
 @tool
 def Audio_EventLocation(video_path: str, query: str) -> str:
@@ -91,18 +81,10 @@ def Audio_EventLocation(video_path: str, query: str) -> str:
     * Format: `* **Timestamp**: [Context/Detail] Why this matches.`
     """.strip()
 
-    if LOCATION_TOOL == "GEMINI":
-        try:
-            return audio_llm(video_path, prompt)
-        except Exception as e:
-            raise ToolException(f"[Audio_EventLocation error] {type(e).__name__}: {e}")
-    elif LOCATION_TOOL == "QWEN":
-        try:
-            return audio_llm_qwen(video_path, prompt)
-        except Exception as e:
-            raise ToolException(f"[Audio_EventLocation error] {type(e).__name__}: {e}")
-    else:
-        raise ToolException(f"[Audio_EventLocation error] Invalid audio tool: {LOCATION_TOOL}")
+    try:
+        return audio_llm(video_path, prompt)
+    except Exception as e:
+        raise ToolException(f"[Audio_EventLocation error] {type(e).__name__}: {e}")
 
 
 def _analyze_audio_with_llm(
@@ -141,21 +123,10 @@ def audio_qa(video_path: str, question: str) -> Dict[str, str]:
     """
     question = _analyze_audio_with_llm(question)
 
-    if LOCATION_TOOL == "GEMINI":
-        try:
-            audio_notes =  audio_llm(video_path, question)
-        except Exception as e:
-            raise ToolException(f"[audio_qa error] {type(e).__name__}: {e}")
-        return {
-            "answer": audio_notes,
-        }
-    elif LOCATION_TOOL == "QWEN":
-        try:
-            audio_notes =  audio_llm_qwen(video_path, question)
-        except Exception as e:
-            raise ToolException(f"[audio_qa error] {type(e).__name__}: {e}")
-        return {
-            "answer": audio_notes,
-        }
-    else:
-        raise ToolException(f"[audio_qa error] Invalid audio tool: {LOCATION_TOOL}")
+    try:
+        audio_notes = audio_llm(video_path, question)
+    except Exception as e:
+        raise ToolException(f"[audio_qa error] {type(e).__name__}: {e}")
+    return {
+        "answer": audio_notes,
+    }

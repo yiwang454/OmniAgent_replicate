@@ -1,141 +1,60 @@
-from google import genai
-import tempfile
+"""Audio MLLM adapter backed exclusively by Gemini 2.5 Flash."""
+
+from __future__ import annotations
+
 import os
 import subprocess
-from google.genai import types
-from omni_agent.config import YOUR_API_KEY_GEMINI, GEMINI_MODEL
+import tempfile
 
-from .units import upload_file_and_get_url
-from omni_agent.config import YOUR_API_KEY_QWEN, QWEN_AUDIO_MODEL
-
-import os
-import dashscope
-
-client = genai.Client(api_key=YOUR_API_KEY_GEMINI)
-
-def get_or_upload_file(client, file_path):
-    target_display_name = os.path.basename(file_path)
-    for f in client.files.list():
-        if f.display_name == target_display_name:
-            return f
-    file_obj = client.files.upload(
-        file=file_path,
-        config={
-                'display_name': target_display_name,
-            }
-    )
-    while file_obj.state.name == "PROCESSING":
-        import time
-        time.sleep(1)
-        file_obj = client.files.get(name=file_obj.name)
-    if file_obj.state.name != "ACTIVE":
-        raise Exception(f"File processing failed: {file_obj.state.name}")
-    return file_obj
+from omni_agent.gemini_api import call_gemini_with_media
 
 
-Gemini_Model = GEMINI_MODEL
-# Gemini
-def audio_llm_gemini(video_path: str, question: str, system_prompt = None) -> str:
+def _existing_audio_path(video_path: str) -> str | None:
+    audio_path = video_path.replace(".mp4", ".wav").replace("videos", "audios")
+    return audio_path if audio_path != video_path and os.path.exists(audio_path) else None
 
-    audio_path_template = video_path.replace(".mp4", ".wav")
-    audio_path_template = audio_path_template.replace("videos", "audios")
 
-    if os.path.exists(audio_path_template):
-        myfile = get_or_upload_file(client, audio_path_template)
-        response = client.models.generate_content(
-            model=Gemini_Model, contents=[question, myfile]
+def audio_llm_gemini(
+    video_path: str,
+    question: str,
+    system_prompt: str | None = None,
+) -> str:
+    audio_path = _existing_audio_path(video_path)
+    if audio_path:
+        return call_gemini_with_media(
+            audio_path,
+            question,
+            system_prompt=system_prompt,
         )
-        return response.text
 
-    else:
-        with open(video_path, 'rb') as f:
-            audio_bytes = f.read()
+    wav_path = ""
+    try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
             wav_path = tmp_wav.name
-        
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path, "-vn", wav_path,
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        myfile = get_or_upload_file(client, wav_path)
-
-        response = client.models.generate_content(
-            model=Gemini_Model, contents=[question, myfile],
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                video_path,
+                "-vn",
+                wav_path,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-
-        client.files.delete(name=myfile.name)
-        return response.text
-
-
-
-
-def audio_llm_qwen(video_path: str, question: str, system_prompt = None) -> str:
-
-    model_name=QWEN_AUDIO_MODEL
-
-    audio_path_template = video_path.replace(".mp4", ".wav")
-    audio_path_template = audio_path_template.replace("videos", "audios")
-
-    if os.path.exists(audio_path_template):
-
-        if not hasattr(audio_llm_qwen, "_audio_url_cache"):
-            audio_llm_qwen._audio_url_cache = {}
-        url_cache = audio_llm_qwen._audio_url_cache
-
-        if audio_path_template in url_cache:
-            print(f"Using cached audio URL for {audio_path_template}")
-            public_url = url_cache[audio_path_template]
-        else:
-            public_url = upload_file_and_get_url(YOUR_API_KEY_QWEN, model_name, audio_path_template)
-            url_cache[audio_path_template] = public_url
-        messages = [
-        {
-            "role": "user",
-            "content": [
-                {"audio": public_url},
-                {"text": question}]
-        }]      
-
-        response = dashscope.MultiModalConversation.call(
-            api_key=YOUR_API_KEY_QWEN,
-            model=model_name,
-            messages=messages
+        return call_gemini_with_media(
+            wav_path,
+            question,
+            system_prompt=system_prompt,
         )
-        return response.output.choices[0].message.content[0]["text"]
-
-    else:
-        with open(video_path, 'rb') as f:
-            audio_bytes = f.read()
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-            wav_path = tmp_wav.name
-        
-        cmd = [
-            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path, "-vn", wav_path,
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if not hasattr(audio_llm_qwen, "_audio_url_cache"):
-            audio_llm_qwen._audio_url_cache = {}
-        url_cache = audio_llm_qwen._audio_url_cache
-
-        if wav_path in url_cache:
-            print(f"Using cached audio URL for {wav_path}")
-            public_url = url_cache[wav_path]
-        else:
-            public_url = upload_file_and_get_url(YOUR_API_KEY_QWEN, model_name, wav_path)
-            url_cache[wav_path] = public_url
-        messages = [
-        {
-            "role": "user",
-            "content": [
-                {"audio": public_url},
-                {"text": question}]
-        }]      
-
-        response = dashscope.MultiModalConversation.call(
-            api_key=YOUR_API_KEY_QWEN,
-            model=model_name,
-            messages=messages
-        )
-        return response.output.choices[0].message.content[0]["text"]
+    finally:
+        if wav_path and os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
+# Compatibility for external code that imported the old generic name.
+audio_llm = audio_llm_gemini

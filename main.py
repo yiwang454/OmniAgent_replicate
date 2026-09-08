@@ -1,4 +1,5 @@
 import argparse
+import os
 from omni_agent.agent_builder import build_agent
 
 agent = build_agent(max_iterations=30)
@@ -51,4 +52,3 @@ if __name__ == "__main__":
             "Please select the most correct answer (A/B/C/D) and output your choice wrapped in <answer> tags, e.g., <answer>A</answer>."
         )
         run_once(test_video_path, prompt)
-

@@ -1,19 +1,8 @@
-from cv2.gapi import video
 from langchain_core.tools import ToolException
 from .units import cut_video
-from .video_llm import video_llm
 from langchain_core.tools import tool
 from typing import Dict
-from dashscope import MultiModalConversation
-import dashscope
-
-import cv2
-from omni_agent.config import YOUR_API_KEY_QWEN, MODEL_BASE_URL, QWEN_VIDEO_MODEL
-
-from .video_llm import video_llm_gemini, video_llm
-from omni_agent.config import VIDEO_TOOL
-
-QWEN_MODEL = QWEN_VIDEO_MODEL
+from .video_llm import video_llm_gemini
 
 @tool
 def video_global_qa(
@@ -49,13 +38,7 @@ def video_global_qa(
     )
 
     try:
-        if VIDEO_TOOL == "GEMINI":
-            visual_notes = video_llm_gemini(video_path, text_block)
-        elif VIDEO_TOOL == "QWEN":
-            visual_notes = video_llm(video_path, text_block)
-        else:
-            raise ToolException(f"[video_global_qa error] Invalid video tool: {VIDEO_TOOL}")
-
+        visual_notes = video_llm_gemini(video_path, text_block)
     except Exception as e:
         raise ToolException(f"[video_global_qa error] {type(e).__name__}: {e}")
     return {
@@ -126,28 +109,8 @@ def video_clip_qa(
         + clip_context
         + f"User question:\n{question}\n\n"
     )
-    visual_notes = None
     try:
-        if VIDEO_TOOL == "GEMINI":
-            visual_notes = video_llm_gemini(cache_path, text_block, fps=5)
-        elif VIDEO_TOOL == "QWEN":
-            from .upload import upload_file_and_get_url
-            public_url = upload_file_and_get_url(YOUR_API_KEY_QWEN, QWEN_MODEL, cache_path)
-            messages = [
-                {
-                    'role': 'user',
-                    'content': [{'video': public_url, "fps": 5},
-                                {'text': text_block}]
-                }
-            ]
-            response = MultiModalConversation.call(
-                api_key=YOUR_API_KEY_QWEN,
-                model=QWEN_MODEL,
-                vl_high_resolution_images=True,
-                messages=messages)
-            visual_notes = response.output.choices[0].message.content[0]["text"]
-        else:
-            raise ToolException(f"[video_clip_qa error] Invalid video tool: {VIDEO_TOOL}")
+        visual_notes = video_llm_gemini(cache_path, text_block, fps=5)
     except Exception as e:
 
         if os.path.exists(cache_path):

@@ -30,35 +30,52 @@ Install our codebase:
 git https://github.com/KD-TAO/OmniAgent.git
 cd OmniAgent
 ```
-Install the dependencies:
+Create the project-local uv environment and install the pinned dependencies:
+
 ```bash
-pip install -r requirements.txt
+python -m pip install --user uv  # only needed if uv is not installed yet
+python -m uv venv .omniagent_venv --python 3.11
+python -m uv pip install --python .omniagent_venv/bin/python -r requirements.txt
 ```
+
+The virtual environment is deliberately stored at `.omniagent_venv/` and is
+ignored by Git. Run commands through it directly (or activate it with
+`source .omniagent_venv/bin/activate`).
 
 ## Quick Start
 
-Firstly, set your own API KEY in **omni_agent/config.py**
+Create a local environment file (it is ignored by Git):
+
 ```bash
-OPENAI_API_KEY = "OPENAI"
-YOUR_API_KEY_GEMINI = "GEMINI"
-YOUR_API_KEY_QWEN = "QWEN"
+cp .env.example .env
 ```
-You can freely provide the API KEY. Regarding the selection of the tool models, we currently support the Gemini series and the Qwen series:
+
+Then set the ELM and Gemini credentials in `.env`:
+
 ```bash
-# ------------------ Tool configuration ------------------ #
-VIDEO_TOOL = "QWEN"
-ASR_GC_TOOL = "QWEN"
-LOCATION_TOOL = "GEMINI"
+ELM_API_KEY=...
+GEMINI_BASE_URL=https://api.apiplus.org
+GEMINI_API_KEY=...
 ```
-More about the basic settings can all be completed in **omni_agent/config.py**.
+
+The central reasoner keeps the repository's original model name (`o3` by
+default, configurable with `BRAIN_MODEL`) and uses the ELM key through the
+OpenAI SDK default endpoint. No custom OpenAI base URL is injected. Every
+audio/video MLLM tool is fixed to `gemini-2.5-flash` and uses the same Bearer
+token `generateContent` endpoint as `react-agent-avqa-optimize`.
+
+OmniAgent loads credentials from its own `.env` only; it never reads the `.env`
+file of a sibling repository.
+
+The repository also requires the `ffmpeg` and `ffprobe` command-line programs.
+They are used for local media extraction/inspection and do not require an API
+key or GPU.
 
 Then, you can quickly run the demo to perform reasoning on the example input or input the video path and the question by yourself.
 
 ```bash
-python main.py
-```
-```bash
-python main.py --video_path YOUR_VIDEO --question "YOUR_Q"
+.omniagent_venv/bin/python main.py
+.omniagent_venv/bin/python main.py --video_path YOUR_VIDEO --question "YOUR_Q"
 ```
 
 ## Citation

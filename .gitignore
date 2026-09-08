@@ -2,3 +2,6 @@ Cache/
 data/
 __pycache__/
 *.pyc
+.env*
+!.env.example
+.omniagent_venv/

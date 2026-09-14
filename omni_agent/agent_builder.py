@@ -6,12 +6,13 @@ import sys
 from langchain_core.tools import tool
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from omni_agent.brain import get_brain_llm
+from omni_agent.budget_aware_executor import BudgetAwareAgentExecutor
 from omni_agent.tool.Audio.audio_qa import audio_global_caption, audio_ASR
 from omni_agent.tool.Video.video_qa import video_global_qa, video_clip_qa
 from omni_agent.tool.Video.video_base import video_metadata
 from omni_agent.tool.Audio.audio_event_tools import Audio_EventList, Audio_EventLocation, audio_qa
 
-def build_agent(max_iterations: int = 6) -> AgentExecutor:
+def build_agent(max_iterations: int = 6, *, verbose: bool = True) -> AgentExecutor:
 
     llm = get_brain_llm()
     tools = [audio_global_caption, audio_qa, video_global_qa, video_clip_qa, video_metadata, Audio_EventList, Audio_EventLocation, audio_ASR]
@@ -37,6 +38,8 @@ def build_agent(max_iterations: int = 6) -> AgentExecutor:
     - Be selective: tools may be noisy or incomplete. Cross-check and verify
     important information using multiple tools if needed.
     - Stop calling tools once you have enough evidence to answer confidently.
+    - If a tool reports a retryable invalid-input error, correct the arguments
+      and call it again. Such validation failures do not use the tool-call budget.
 
     Final answer style:
     - When you are done with tools, reply directly to the user (no more tool calls).
@@ -100,11 +103,11 @@ def build_agent(max_iterations: int = 6) -> AgentExecutor:
         return_messages=True,
     )
 
-    executor = AgentExecutor(
+    executor = BudgetAwareAgentExecutor(
         agent=agent,
         tools=tools,
         memory=memory,
-        verbose=True,
+        verbose=verbose,
         max_iterations=max_iterations,
         early_stopping_method="force",
         return_intermediate_steps=True

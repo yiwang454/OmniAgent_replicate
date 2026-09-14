@@ -71,12 +71,62 @@ The repository also requires the `ffmpeg` and `ffprobe` command-line programs.
 They are used for local media extraction/inspection and do not require an API
 key or GPU.
 
-Then, you can quickly run the demo to perform reasoning on the example input or input the video path and the question by yourself.
+`main.py` runs the complete DailyOmni benchmark by default. It reads
+`/mnt/ceph_rbd/data/avqa_project/daily_omni/daily_omni_cuts_v3.jsonl`, writes
+one `<question-id>.json` rollout per sample, and continuously updates the
+required aggregate artifact `<output-dir>/output_test.jsonl`. Each rollout
+contains the planner prompts/responses, tool inputs/observations, and Gemini
+perception prompts/responses.
 
 ```bash
-.omniagent_venv/bin/python main.py
+.omniagent_venv/bin/python main.py --output-dir output
+.omniagent_venv/bin/python main.py --output-dir output --no-print-steps
+.omniagent_venv/bin/python main.py --example
 .omniagent_venv/bin/python main.py --video_path YOUR_VIDEO --question "YOUR_Q"
 ```
+
+Step-by-step terminal output is enabled by default. Use `--no-print-steps` to
+disable LangChain's verbose rollout while retaining the complete JSON trace.
+For a smoke test, add `--limit 1`; to run selected cuts, repeat
+`--sample-id QUESTION_ID`.
+
+Benchmark runs resume by default. Existing per-question JSON trajectories are
+used to rebuild a missing or interrupted aggregate; completed non-error samples
+are skipped, while explicit `[ERROR]` and empty responses are rerun. The
+original `Agent stopped due to max iterations.` outcome is preserved rather
+than silently rerun. Use `--no-resume` only when intentionally starting the
+entire output directory again.
+
+To inspect or recoverably remove stale explicit-error histories before a
+resume, run the cleanup command without `--apply` first. Applied removals are
+moved under `.removed_error_history/` rather than permanently deleted.
+
+```bash
+.omniagent_venv/bin/python scripts/remove_error_question_history.py \
+  /path/to/output-dir
+
+.omniagent_venv/bin/python scripts/remove_error_question_history.py \
+  /path/to/output-dir --apply
+```
+
+The Gemini-compatible gateway is retried for transient 429/5xx responses and
+its intermittent `Part.data` oneof 400. The latter retry uses the equivalent
+text-first/media-second Gemini payload. Defaults are six attempts with capped
+exponential backoff; tune them with `GEMINI_MAX_RETRIES`,
+`GEMINI_RETRY_DELAY_S`, and `GEMINI_RETRY_MAX_DELAY_S`.
+
+Evaluate a completed or partial output while excluding explicit errors and
+empty responses:
+
+```bash
+.omniagent_venv/bin/python scripts/evaluate_dailyomni_output.py \
+  /path/to/output-dir \
+  --json-output /path/to/output-dir/evaluation_success_only.json
+```
+
+The report separates accuracy among parseable successful answers from the
+strict accuracy that excludes only errors/empty responses and therefore counts
+non-empty responses without a valid answer as incorrect.
 
 ## Citation
 

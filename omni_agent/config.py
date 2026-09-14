@@ -42,8 +42,9 @@ GEMINI_BASE_URL = _first_nonempty(
 ).rstrip("/")
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_TIMEOUT = int(os.getenv("GEMINI_TIMEOUT", "180"))
-GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
+GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "6"))
 GEMINI_RETRY_DELAY_S = float(os.getenv("GEMINI_RETRY_DELAY_S", "5"))
+GEMINI_RETRY_MAX_DELAY_S = float(os.getenv("GEMINI_RETRY_MAX_DELAY_S", "60"))
 GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "4096"))
 
 # All high-level audio/video perception tools use Gemini 2.5 Flash.

@@ -5,6 +5,7 @@ import unittest
 from langchain_classic.agents import BaseSingleActionAgent
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import tool
+from pydantic import Field
 
 from omni_agent.budget_aware_executor import BudgetAwareAgentExecutor
 from omni_agent.tool.Video.video_qa import video_clip_qa
@@ -25,6 +26,23 @@ class _TwoStepAgent(BaseSingleActionAgent):
                 log="",
             )
         return AgentFinish(return_values={"output": "done"}, log="")
+
+    async def aplan(self, intermediate_steps, **kwargs):
+        return self.plan(intermediate_steps, **kwargs)
+
+
+class _ToolThenForcedFinalAgent(BaseSingleActionAgent):
+    plan_inputs: list[dict] = Field(default_factory=list)
+
+    @property
+    def input_keys(self):
+        return ["input"]
+
+    def plan(self, intermediate_steps, **kwargs):
+        self.plan_inputs.append(kwargs)
+        if kwargs.get("forced_final_instruction"):
+            return AgentFinish(return_values={"output": "<answer>B</answer>"}, log="")
+        return AgentAction(tool="budget_probe", tool_input={"index": 1}, log="")
 
     async def aplan(self, intermediate_steps, **kwargs):
         return self.plan(intermediate_steps, **kwargs)
@@ -64,6 +82,23 @@ class VideoTimeRangeTests(unittest.TestCase):
 
         self.assertEqual(result["output"], "done")
         self.assertEqual(len(result["intermediate_steps"]), 2)
+
+    def test_turn_limit_forces_one_final_planner_pass(self):
+        agent = _ToolThenForcedFinalAgent()
+        executor = BudgetAwareAgentExecutor(
+            agent=agent,
+            tools=[budget_probe],
+            max_iterations=1,
+            return_intermediate_steps=True,
+        )
+
+        result = executor.invoke({"input": "test"})
+
+        self.assertEqual(result["output"], "<answer>B</answer>")
+        self.assertEqual(len(result["intermediate_steps"]), 1)
+        self.assertEqual(len(agent.plan_inputs), 2)
+        instruction = agent.plan_inputs[-1]["forced_final_instruction"][0].content
+        self.assertIn("do not\ncall any tool", instruction)
 
     def test_in_bounds_range_is_unchanged(self):
         self.assertEqual(legalize_time_range(5, 10, 30), (5.0, 10.0))

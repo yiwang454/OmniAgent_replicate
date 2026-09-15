@@ -8,9 +8,19 @@ from typing import Any
 from langchain_classic.agents import AgentExecutor
 from langchain_core.agents import AgentFinish
 from langchain_core.callbacks import CallbackManagerForChainRun
+from langchain_core.messages import SystemMessage
 from langchain_core.utils.input import get_color_mapping
 
 from omni_agent.tool_outcomes import is_budget_exempt_observation
+
+
+FORCED_FINAL_INSTRUCTION = """
+The tool-call limit has been reached. This is the final answer round: do not
+call any tool. Use the observations already available in the scratchpad and
+answer the user's multiple-choice question now. Select exactly one of the
+provided choices and return it wrapped in <answer> tags (for example,
+<answer>A</answer>).
+""".strip()
 
 
 class BudgetAwareAgentExecutor(AgentExecutor):
@@ -63,6 +73,24 @@ class BudgetAwareAgentExecutor(AgentExecutor):
             if not budget_exempt:
                 iterations += 1
             time_elapsed = time.time() - start_time
+
+        # The normal AgentExecutor `force` policy emits a fixed stopped string,
+        # which loses otherwise useful evidence collected by the final tool
+        # turn.  Spend one planner-only pass at a *turn* limit instead.  The
+        # injected system instruction prevents another tool call, so this does
+        # not expand the perception/tool budget.
+        if self.max_iterations is not None and iterations >= self.max_iterations:
+            forced_inputs = dict(inputs)
+            forced_inputs["forced_final_instruction"] = [
+                SystemMessage(content=FORCED_FINAL_INSTRUCTION)
+            ]
+            forced_output = self._action_agent.plan(
+                self._prepare_intermediate_steps(intermediate_steps),
+                callbacks=run_manager.get_child() if run_manager else None,
+                **forced_inputs,
+            )
+            if isinstance(forced_output, AgentFinish):
+                return self._return(forced_output, intermediate_steps, run_manager=run_manager)
 
         output = self._action_agent.return_stopped_response(
             self.early_stopping_method,

@@ -85,6 +85,10 @@ def build_agent(max_iterations: int = 6, *, verbose: bool = True) -> AgentExecut
             ("system", system_prompt),
             MessagesPlaceholder("chat_history"),
             ("user", user_template),
+            # The executor fills this only after it has exhausted the tool-call
+            # budget.  Keeping it separate from the question makes the final
+            # planner pass explicit in the recorded prompt.
+            MessagesPlaceholder("forced_final_instruction", optional=True),
             MessagesPlaceholder("agent_scratchpad"),
         ]
     )

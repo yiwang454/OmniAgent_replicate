@@ -1,0 +1,719 @@
+{
+  "total_samples": 1197,
+  "samples_with_question_bearing_tool": 1172,
+  "samples_with_perception": 1172,
+  "samples_without_question_bearing_tool": 25,
+  "samples_without_perception": 25,
+  "total_question_bearing_calls": 6294,
+  "total_perception_calls": 6294,
+  "samples_with_multiple_question_bearing_calls": 958,
+  "samples_with_multiple_perception_calls": 958,
+  "metrics": {
+    "verbatim_original_question": {
+      "question_bearing_calls": {
+        "count": 10,
+        "denominator": 6294,
+        "percent": 0.15888147442008263
+      },
+      "all_samples": {
+        "count": 10,
+        "denominator": 1197,
+        "percent": 0.835421888053467
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 10,
+        "denominator": 1172,
+        "percent": 0.8532423208191127
+      }
+    },
+    "casefold_verbatim_original_question": {
+      "question_bearing_calls": {
+        "count": 10,
+        "denominator": 6294,
+        "percent": 0.15888147442008263
+      },
+      "all_samples": {
+        "count": 10,
+        "denominator": 1197,
+        "percent": 0.835421888053467
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 10,
+        "denominator": 1172,
+        "percent": 0.8532423208191127
+      }
+    },
+    "normalized_full_original_question": {
+      "question_bearing_calls": {
+        "count": 11,
+        "denominator": 6294,
+        "percent": 0.17476962186209088
+      },
+      "all_samples": {
+        "count": 11,
+        "denominator": 1197,
+        "percent": 0.9189640768588136
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 11,
+        "denominator": 1172,
+        "percent": 0.9385665529010239
+      }
+    },
+    "exact_original_question": {
+      "question_bearing_calls": {
+        "count": 11,
+        "denominator": 6294,
+        "percent": 0.17476962186209088
+      },
+      "all_samples": {
+        "count": 11,
+        "denominator": 1197,
+        "percent": 0.9189640768588136
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 11,
+        "denominator": 1172,
+        "percent": 0.9385665529010239
+      }
+    },
+    "first_edge": {
+      "question_bearing_calls": {
+        "count": 118,
+        "denominator": 6294,
+        "percent": 1.8748013981569749
+      },
+      "all_samples": {
+        "count": 110,
+        "denominator": 1197,
+        "percent": 9.189640768588138
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 110,
+        "denominator": 1172,
+        "percent": 9.38566552901024
+      }
+    },
+    "last_edge": {
+      "question_bearing_calls": {
+        "count": 611,
+        "denominator": 6294,
+        "percent": 9.707658087067047
+      },
+      "all_samples": {
+        "count": 402,
+        "denominator": 1197,
+        "percent": 33.583959899749374
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 402,
+        "denominator": 1172,
+        "percent": 34.30034129692833
+      }
+    },
+    "rough_first_or_last_edge": {
+      "question_bearing_calls": {
+        "count": 698,
+        "denominator": 6294,
+        "percent": 11.089926914521767
+      },
+      "all_samples": {
+        "count": 467,
+        "denominator": 1197,
+        "percent": 39.01420217209691
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 467,
+        "denominator": 1172,
+        "percent": 39.846416382252556
+      }
+    },
+    "first_or_last_edge": {
+      "question_bearing_calls": {
+        "count": 698,
+        "denominator": 6294,
+        "percent": 11.089926914521767
+      },
+      "all_samples": {
+        "count": 467,
+        "denominator": 1197,
+        "percent": 39.01420217209691
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 467,
+        "denominator": 1172,
+        "percent": 39.846416382252556
+      }
+    },
+    "explicit_abcd_observation": {
+      "question_bearing_calls": {
+        "count": 0,
+        "denominator": 6294,
+        "percent": 0.0
+      },
+      "all_samples": {
+        "count": 0,
+        "denominator": 1197,
+        "percent": 0.0
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 0,
+        "denominator": 1172,
+        "percent": 0.0
+      }
+    },
+    "combined_edge_or_abcd": {
+      "question_bearing_calls": {
+        "count": 698,
+        "denominator": 6294,
+        "percent": 11.089926914521767
+      },
+      "all_samples": {
+        "count": 467,
+        "denominator": 1197,
+        "percent": 39.01420217209691
+      },
+      "samples_with_question_bearing_tool": {
+        "count": 467,
+        "denominator": 1172,
+        "percent": 39.846416382252556
+      }
+    }
+  },
+  "by_tool": {
+    "Audio_EventLocation": {
+      "question_bearing_calls": 778,
+      "samples": 544,
+      "matches": {
+        "verbatim_original_question": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "casefold_verbatim_original_question": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "normalized_full_original_question": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "exact_original_question": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "first_edge": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "last_edge": {
+          "calls": {
+            "count": 164,
+            "denominator": 778,
+            "percent": 21.079691516709513
+          },
+          "samples": {
+            "count": 152,
+            "denominator": 544,
+            "percent": 27.941176470588236
+          }
+        },
+        "rough_first_or_last_edge": {
+          "calls": {
+            "count": 164,
+            "denominator": 778,
+            "percent": 21.079691516709513
+          },
+          "samples": {
+            "count": 152,
+            "denominator": 544,
+            "percent": 27.941176470588236
+          }
+        },
+        "first_or_last_edge": {
+          "calls": {
+            "count": 164,
+            "denominator": 778,
+            "percent": 21.079691516709513
+          },
+          "samples": {
+            "count": 152,
+            "denominator": 544,
+            "percent": 27.941176470588236
+          }
+        },
+        "explicit_abcd_observation": {
+          "calls": {
+            "count": 0,
+            "denominator": 778,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 544,
+            "percent": 0.0
+          }
+        },
+        "combined_edge_or_abcd": {
+          "calls": {
+            "count": 164,
+            "denominator": 778,
+            "percent": 21.079691516709513
+          },
+          "samples": {
+            "count": 152,
+            "denominator": 544,
+            "percent": 27.941176470588236
+          }
+        }
+      }
+    },
+    "audio_qa": {
+      "question_bearing_calls": 1299,
+      "samples": 659,
+      "matches": {
+        "verbatim_original_question": {
+          "calls": {
+            "count": 6,
+            "denominator": 1299,
+            "percent": 0.4618937644341801
+          },
+          "samples": {
+            "count": 6,
+            "denominator": 659,
+            "percent": 0.9104704097116844
+          }
+        },
+        "casefold_verbatim_original_question": {
+          "calls": {
+            "count": 6,
+            "denominator": 1299,
+            "percent": 0.4618937644341801
+          },
+          "samples": {
+            "count": 6,
+            "denominator": 659,
+            "percent": 0.9104704097116844
+          }
+        },
+        "normalized_full_original_question": {
+          "calls": {
+            "count": 7,
+            "denominator": 1299,
+            "percent": 0.5388760585065435
+          },
+          "samples": {
+            "count": 7,
+            "denominator": 659,
+            "percent": 1.062215477996965
+          }
+        },
+        "exact_original_question": {
+          "calls": {
+            "count": 7,
+            "denominator": 1299,
+            "percent": 0.5388760585065435
+          },
+          "samples": {
+            "count": 7,
+            "denominator": 659,
+            "percent": 1.062215477996965
+          }
+        },
+        "first_edge": {
+          "calls": {
+            "count": 60,
+            "denominator": 1299,
+            "percent": 4.618937644341801
+          },
+          "samples": {
+            "count": 58,
+            "denominator": 659,
+            "percent": 8.801213960546283
+          }
+        },
+        "last_edge": {
+          "calls": {
+            "count": 185,
+            "denominator": 1299,
+            "percent": 14.24172440338722
+          },
+          "samples": {
+            "count": 147,
+            "denominator": 659,
+            "percent": 22.306525037936268
+          }
+        },
+        "rough_first_or_last_edge": {
+          "calls": {
+            "count": 229,
+            "denominator": 1299,
+            "percent": 17.62894534257121
+          },
+          "samples": {
+            "count": 189,
+            "denominator": 659,
+            "percent": 28.679817905918057
+          }
+        },
+        "first_or_last_edge": {
+          "calls": {
+            "count": 229,
+            "denominator": 1299,
+            "percent": 17.62894534257121
+          },
+          "samples": {
+            "count": 189,
+            "denominator": 659,
+            "percent": 28.679817905918057
+          }
+        },
+        "explicit_abcd_observation": {
+          "calls": {
+            "count": 0,
+            "denominator": 1299,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 659,
+            "percent": 0.0
+          }
+        },
+        "combined_edge_or_abcd": {
+          "calls": {
+            "count": 229,
+            "denominator": 1299,
+            "percent": 17.62894534257121
+          },
+          "samples": {
+            "count": 189,
+            "denominator": 659,
+            "percent": 28.679817905918057
+          }
+        }
+      }
+    },
+    "video_clip_qa": {
+      "question_bearing_calls": 3592,
+      "samples": 756,
+      "matches": {
+        "verbatim_original_question": {
+          "calls": {
+            "count": 1,
+            "denominator": 3592,
+            "percent": 0.02783964365256125
+          },
+          "samples": {
+            "count": 1,
+            "denominator": 756,
+            "percent": 0.13227513227513227
+          }
+        },
+        "casefold_verbatim_original_question": {
+          "calls": {
+            "count": 1,
+            "denominator": 3592,
+            "percent": 0.02783964365256125
+          },
+          "samples": {
+            "count": 1,
+            "denominator": 756,
+            "percent": 0.13227513227513227
+          }
+        },
+        "normalized_full_original_question": {
+          "calls": {
+            "count": 1,
+            "denominator": 3592,
+            "percent": 0.02783964365256125
+          },
+          "samples": {
+            "count": 1,
+            "denominator": 756,
+            "percent": 0.13227513227513227
+          }
+        },
+        "exact_original_question": {
+          "calls": {
+            "count": 1,
+            "denominator": 3592,
+            "percent": 0.02783964365256125
+          },
+          "samples": {
+            "count": 1,
+            "denominator": 756,
+            "percent": 0.13227513227513227
+          }
+        },
+        "first_edge": {
+          "calls": {
+            "count": 40,
+            "denominator": 3592,
+            "percent": 1.1135857461024499
+          },
+          "samples": {
+            "count": 37,
+            "denominator": 756,
+            "percent": 4.894179894179894
+          }
+        },
+        "last_edge": {
+          "calls": {
+            "count": 145,
+            "denominator": 3592,
+            "percent": 4.036748329621381
+          },
+          "samples": {
+            "count": 109,
+            "denominator": 756,
+            "percent": 14.417989417989418
+          }
+        },
+        "rough_first_or_last_edge": {
+          "calls": {
+            "count": 178,
+            "denominator": 3592,
+            "percent": 4.955456570155902
+          },
+          "samples": {
+            "count": 134,
+            "denominator": 756,
+            "percent": 17.724867724867725
+          }
+        },
+        "first_or_last_edge": {
+          "calls": {
+            "count": 178,
+            "denominator": 3592,
+            "percent": 4.955456570155902
+          },
+          "samples": {
+            "count": 134,
+            "denominator": 756,
+            "percent": 17.724867724867725
+          }
+        },
+        "explicit_abcd_observation": {
+          "calls": {
+            "count": 0,
+            "denominator": 3592,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 756,
+            "percent": 0.0
+          }
+        },
+        "combined_edge_or_abcd": {
+          "calls": {
+            "count": 178,
+            "denominator": 3592,
+            "percent": 4.955456570155902
+          },
+          "samples": {
+            "count": 134,
+            "denominator": 756,
+            "percent": 17.724867724867725
+          }
+        }
+      }
+    },
+    "video_global_qa": {
+      "question_bearing_calls": 625,
+      "samples": 535,
+      "matches": {
+        "verbatim_original_question": {
+          "calls": {
+            "count": 3,
+            "denominator": 625,
+            "percent": 0.48
+          },
+          "samples": {
+            "count": 3,
+            "denominator": 535,
+            "percent": 0.5607476635514018
+          }
+        },
+        "casefold_verbatim_original_question": {
+          "calls": {
+            "count": 3,
+            "denominator": 625,
+            "percent": 0.48
+          },
+          "samples": {
+            "count": 3,
+            "denominator": 535,
+            "percent": 0.5607476635514018
+          }
+        },
+        "normalized_full_original_question": {
+          "calls": {
+            "count": 3,
+            "denominator": 625,
+            "percent": 0.48
+          },
+          "samples": {
+            "count": 3,
+            "denominator": 535,
+            "percent": 0.5607476635514018
+          }
+        },
+        "exact_original_question": {
+          "calls": {
+            "count": 3,
+            "denominator": 625,
+            "percent": 0.48
+          },
+          "samples": {
+            "count": 3,
+            "denominator": 535,
+            "percent": 0.5607476635514018
+          }
+        },
+        "first_edge": {
+          "calls": {
+            "count": 18,
+            "denominator": 625,
+            "percent": 2.88
+          },
+          "samples": {
+            "count": 18,
+            "denominator": 535,
+            "percent": 3.364485981308411
+          }
+        },
+        "last_edge": {
+          "calls": {
+            "count": 117,
+            "denominator": 625,
+            "percent": 18.72
+          },
+          "samples": {
+            "count": 110,
+            "denominator": 535,
+            "percent": 20.560747663551403
+          }
+        },
+        "rough_first_or_last_edge": {
+          "calls": {
+            "count": 127,
+            "denominator": 625,
+            "percent": 20.32
+          },
+          "samples": {
+            "count": 120,
+            "denominator": 535,
+            "percent": 22.429906542056074
+          }
+        },
+        "first_or_last_edge": {
+          "calls": {
+            "count": 127,
+            "denominator": 625,
+            "percent": 20.32
+          },
+          "samples": {
+            "count": 120,
+            "denominator": 535,
+            "percent": 22.429906542056074
+          }
+        },
+        "explicit_abcd_observation": {
+          "calls": {
+            "count": 0,
+            "denominator": 625,
+            "percent": 0.0
+          },
+          "samples": {
+            "count": 0,
+            "denominator": 535,
+            "percent": 0.0
+          }
+        },
+        "combined_edge_or_abcd": {
+          "calls": {
+            "count": 127,
+            "denominator": 625,
+            "percent": 20.32
+          },
+          "samples": {
+            "count": 120,
+            "denominator": 535,
+            "percent": 22.429906542056074
+          }
+        }
+      }
+    }
+  },
+  "source": "/mnt/ceph_rbd/data/avqa_project/daily_omni/OmniAgent_repeat1/output_test.jsonl",
+  "edge_word_count": 3,
+  "review_seed": 18,
+  "review_sample_size": 20,
+  "tool_usage": {
+    "total_tool_calls": 8700,
+    "samples_with_any_tool": 1194,
+    "samples_without_any_tool": 3,
+    "budget_exempt_calls": 0,
+    "calls_by_tool": {
+      "video_clip_qa": 3592,
+      "audio_qa": 1299,
+      "Audio_EventLocation": 778,
+      "video_metadata": 769,
+      "audio_global_caption": 696,
+      "video_global_qa": 625,
+      "audio_ASR": 561,
+      "Audio_EventList": 380
+    },
+    "samples_by_tool": {
+      "audio_global_caption": 695,
+      "audio_ASR": 447,
+      "Audio_EventLocation": 544,
+      "video_metadata": 766,
+      "video_global_qa": 535,
+      "video_clip_qa": 756,
+      "audio_qa": 659,
+      "Audio_EventList": 374
+    }
+  }
+}

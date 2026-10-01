@@ -1,4 +1,4 @@
-# OmniAgent: Active Perception Agent for Omnimodal Audio-Video Understanding
+# Replicating paper: OmniAgent: Active Perception Agent for Omnimodal Audio-Video Understanding
 
 [Keda Tao](https://kd-tao.github.io/), [Wenjie Du](https://kurt232.github.io/), [Bohan Yu](), [Weiqiang Wang](), [Jian liu](), [Huan Wang](https://huanwang.tech/), "OmniAgent: Active Perception Agent for Omnimodal Audio-Video Understanding"
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ DEFAULT_INPUT_JSONL = Path(
     "/mnt/ceph_rbd/data/avqa_project/daily_omni/daily_omni_cuts_v3.jsonl"
 )
 DEFAULT_OUTPUT_DIR = Path("output")
+DEFAULT_BENCHMARK_WORKERS = 4
 OUTPUT_FILENAME = "output_test.jsonl"
 ANSWER_INSTRUCTION = (
     "Please select the most correct answer (A/B/C/D) and output your choice "
@@ -285,6 +287,44 @@ def load_resume_rows(
     return recovered
 
 
+def run_benchmark_sample(
+    cut: dict[str, Any],
+    *,
+    max_iterations: int,
+    print_steps: bool,
+) -> tuple[dict[str, Any], str | None]:
+    """Run one sample independently so benchmark samples can execute concurrently."""
+    try:
+        payload = build_input(cut)
+        result, turn_trace = invoke_agent(
+            payload["video_path"],
+            payload["question"],
+            max_iterations=max_iterations,
+            print_steps=print_steps,
+        )
+        row = build_result_row(cut, str(result.get("output", "")))
+        row["question_data"]["turn_trace"] = turn_trace
+        return row, None
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        row = build_result_row(cut, f"[ERROR] {error}")
+        row["question_data"]["turn_trace"] = [
+            {
+                "turn_id": 1,
+                "planner_action": "error",
+                "tool_name": None,
+                "tool_args": None,
+                "tool_observation": None,
+                "tool_error": error,
+                "final_answer": None,
+                "planner_prompt": None,
+                "planner_response": None,
+                "planner_response_text": None,
+            }
+        ]
+        return row, error
+
+
 def run_benchmark(args: argparse.Namespace) -> None:
     all_cuts = read_jsonl(args.input_jsonl)
     cuts = all_cuts
@@ -330,45 +370,33 @@ def run_benchmark(args: argparse.Namespace) -> None:
             f"selected_to_run={len(cuts_to_run)}"
         )
 
+    workers = getattr(args, "workers", DEFAULT_BENCHMARK_WORKERS)
+    print(f"Concurrent question samples: {workers}")
     completed = 0
-    for index, cut in enumerate(cuts_to_run, start=1):
-        sample_id = cut_id(cut)
-        print(f"[{index}/{len(cuts_to_run)}] {sample_id}")
-        try:
-            payload = build_input(cut)
-            result, turn_trace = invoke_agent(
-                payload["video_path"],
-                payload["question"],
+    future_metadata = {}
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="omniagent") as executor:
+        for index, cut in enumerate(cuts_to_run, start=1):
+            sample_id = cut_id(cut)
+            print(f"[{index}/{len(cuts_to_run)}] {sample_id}")
+            future = executor.submit(
+                run_benchmark_sample,
+                cut,
                 max_iterations=args.max_iterations,
                 print_steps=args.print_steps,
             )
-            row = build_result_row(cut, str(result.get("output", "")))
-            row["question_data"]["turn_trace"] = turn_trace
-        except Exception as exc:
-            row = build_result_row(cut, f"[ERROR] {type(exc).__name__}: {exc}")
-            row["question_data"]["turn_trace"] = [
-                {
-                    "turn_id": 1,
-                    "planner_action": "error",
-                    "tool_name": None,
-                    "tool_args": None,
-                    "tool_observation": None,
-                    "tool_error": f"{type(exc).__name__}: {exc}",
-                    "final_answer": None,
-                    "planner_prompt": None,
-                    "planner_response": None,
-                    "planner_response_text": None,
-                }
-            ]
-            print(
-                f"[{index}/{len(cuts_to_run)}] ERROR {sample_id}: "
-                f"{type(exc).__name__}: {exc}"
-            )
+            future_metadata[future] = (index, sample_id)
 
-        write_question_json(args.output_dir, row)
-        # Keep a valid partial aggregate throughout this long benchmark run.
-        append_output_row(output_path, row)
-        completed += 1
+        for future in as_completed(future_metadata):
+            index, sample_id = future_metadata[future]
+            row, error = future.result()
+            if error is not None:
+                print(f"[{index}/{len(cuts_to_run)}] ERROR {sample_id}: {error}")
+
+            # Keep writes in the coordinator: per-question files are atomic and
+            # the aggregate stays valid while worker rollouts finish out of order.
+            write_question_json(args.output_dir, row)
+            append_output_row(output_path, row)
+            completed += 1
 
     print(
         f"Wrote {completed} new row(s); aggregate now has "
@@ -421,6 +449,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-iterations", type=int, default=30)
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_BENCHMARK_WORKERS,
+        help=(
+            "Number of DailyOmni question samples to run concurrently "
+            f"(default: {DEFAULT_BENCHMARK_WORKERS})."
+        ),
+    )
+    parser.add_argument(
         "--resume",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -451,6 +488,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--limit must be at least 1")
     if args.max_iterations < 1:
         parser.error("--max-iterations must be at least 1")
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
     return args
 
 

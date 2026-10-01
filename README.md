@@ -87,6 +87,8 @@ perception prompts/responses.
 
 Step-by-step terminal output is enabled by default. Use `--no-print-steps` to
 disable LangChain's verbose rollout while retaining the complete JSON trace.
+Benchmark samples run with four concurrent workers by default; use
+`--workers N` to change this (for example, `--workers 1` for serial execution).
 For a smoke test, add `--limit 1`; to run selected cuts, repeat
 `--sample-id QUESTION_ID`.
 

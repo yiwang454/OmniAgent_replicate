@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -162,6 +163,46 @@ class DailyOmniRunnerTests(unittest.TestCase):
                 (output_dir / "video-1.json").read_text(encoding="utf-8")
             )
             self.assertEqual(saved_again["response"], "<answer>B</answer>")
+
+    def test_benchmark_runs_question_samples_concurrently(self):
+        cuts = [sample_cut(), sample_cut()]
+        cuts[1]["id"] = "video-2"
+        cuts[1]["supervisions"][0]["id"] = "video-2"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_jsonl = root / "input.jsonl"
+            input_jsonl.write_text(
+                "".join(json.dumps(cut) + "\n" for cut in cuts), encoding="utf-8"
+            )
+            args = argparse.Namespace(
+                input_jsonl=input_jsonl,
+                output_dir=root / "rollouts",
+                sample_id=None,
+                limit=None,
+                max_iterations=30,
+                print_steps=False,
+                resume=True,
+                workers=2,
+            )
+            lock = threading.Lock()
+            both_started = threading.Event()
+            state = {"active": 0, "max_active": 0}
+
+            def concurrent_invoke(*_args, **_kwargs):
+                with lock:
+                    state["active"] += 1
+                    state["max_active"] = max(state["max_active"], state["active"])
+                    if state["active"] == 2:
+                        both_started.set()
+                both_started.wait(timeout=2)
+                with lock:
+                    state["active"] -= 1
+                return {"output": "<answer>B</answer>"}, []
+
+            with patch.object(main, "invoke_agent", side_effect=concurrent_invoke):
+                main.run_benchmark(args)
+
+            self.assertEqual(state["max_active"], 2)
 
     def test_max_iteration_history_is_preserved_as_original_outcome(self):
         row = {"question_data": {"response": "Agent stopped due to max iterations."}}

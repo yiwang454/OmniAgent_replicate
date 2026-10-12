@@ -65,7 +65,9 @@ audio/video MLLM tool is fixed to `gemini-2.5-flash` and uses the same Bearer
 token `generateContent` endpoint as `react-agent-avqa-optimize`.
 
 OmniAgent loads credentials from its own `.env` only; it never reads the `.env`
-file of a sibling repository.
+file of a sibling repository by default. For an explicit one-off credential
+source, set `OMNIAGENT_ENV_FILE=/absolute/path/to/.env`; values from that file
+override inherited credential variables for that process.
 
 The repository also requires the `ffmpeg` and `ffprobe` command-line programs.
 They are used for local media extraction/inspection and do not require an API
@@ -98,6 +100,94 @@ are skipped, while explicit `[ERROR]` and empty responses are rerun. The
 original `Agent stopped due to max iterations.` outcome is preserved rather
 than silently rerun. Use `--no-resume` only when intentionally starting the
 entire output directory again.
+
+AVUT and WorldSense launchers run four question workers, log to `run.log`, and
+write an aggregate latency/token report after all expected rows complete:
+
+```bash
+scripts/run_omniagent_avut.sh --no-print-steps
+scripts/run_omniagent_worldsense.sh --no-print-steps
+```
+
+Every new per-question result contains `question_data.latency` with wall-clock,
+retry-adjusted, and successful API-call durations, plus successful planner and
+perception call counts. Retry-adjusted duration follows the sibling
+`react-agent-avqa-optimize` convention: failed API attempts and the backoff
+before their retry are removed; it is `null` for failed questions. The result
+also contains `question_data.token_usage`, aggregating exact brain/planner usage
+and Gemini `usageMetadata`. Each Gemini call retains its raw `usage_metadata`
+inside `turn_trace[*].perception_calls`.
+
+To validate and summarize either a completed or partial output manually:
+
+```bash
+.omniagent_venv/bin/python scripts/aggregate_inference_metrics.py \
+  /path/to/output_test.jsonl \
+  --output-json /path/to/inference_metrics_summary.json
+```
+
+## Tool-selection ablations (DailyOmni selectedVal125)
+
+Completed 125-question results and metric definitions are summarized in
+[`TOOL_ABLATION_SELECTEDVAL125_RESULTS.md`](TOOL_ABLATION_SELECTEDVAL125_RESULTS.md).
+The same 125 questions extracted from both completed Full OmniAgent replication
+runs are summarized in
+[`FULL_OMNIAGENT_SELECTEDVAL125_RESULTS.md`](FULL_OMNIAGENT_SELECTEDVAL125_RESULTS.md).
+
+The ablation registry lives in `configs/tool_ablation/`. Each experiment JSON
+declares its enabled groups/tools and points to a prompt template derived from
+the verbatim base template in `configs/tool_ablation/prompts/base.txt`.
+Unavailable-tool guidance is removed while the rest of the prompt is preserved.
+
+The seven resumable launchers use questions/labels from
+`daily_omni_cuts_selectedVal125.jsonl` (125 rows) and resolve the corresponding
+silent-video and WAV sources by question ID from
+`daily_omni_cuts_v3_sepAV.jsonl`. They retain the default planner, high reasoning
+effort, agent loop, tool implementations, and `max_iterations=30`.
+
+```bash
+scripts/run_ablation_minus_a.sh --no-print-steps
+scripts/run_ablation_minus_e.sh --no-print-steps
+scripts/run_ablation_minus_a_e.sh --no-print-steps
+scripts/run_ablation_minus_c.sh --no-print-steps
+scripts/run_ablation_minus_q.sh --no-print-steps
+scripts/run_ablation_minus_m.sh --no-print-steps
+scripts/run_ablation_minimal.sh --no-print-steps
+```
+
+To run repeat 2 and repeat 3, with all seven ablations parallel within each
+repeat and the two repeats serialized:
+
+```bash
+scripts/run_all_tool_ablation_selectedval125_repeats2_3.sh
+```
+
+This defaults to four question workers per experiment (28 maximum concurrent
+question workers). To reduce load while retaining seven-way experiment
+parallelism, set, for example, `WORKERS_PER_EXPERIMENT=1`. The launcher is
+resumable and writes to `OmniAgent_tool_ablation_selectedVal125_repeat2` and
+`OmniAgent_tool_ablation_selectedVal125_repeat3` under the DailyOmni data root.
+
+Runs resume by default. Override `OUTPUT_ROOT`, `WORKERS`, or
+`CAPTION_CACHE_DIR` through environment variables when needed. Configurations
+containing group C use the existing question-scoped `audio_global_caption`
+cache; `minus_c` cannot accept a caption cache. Original cache-generation token
+usage and latency are retained when present. Older trace-derived cache entries
+that predate exact usage/latency logging are reported as unknown rather than
+estimated.
+
+For a five-question smoke test across all seven configurations:
+
+```bash
+OUTPUT_ROOT=/path/to/smoke-output scripts/run_all_tool_ablation_smoke.sh
+```
+
+Each experiment directory contains resumable per-question JSON files,
+`output_test.jsonl`, `run_config.json`, `metrics_summary.json`,
+`accuracy_summary.json`, and `run.log`. Per-question metrics include correctness,
+tool-call counts, exact planner/perception input/output/reasoning tokens,
+estimated model cost, warm-cache lookup/runtime, available cold-cache source
+generation cost/latency, and structured failure details.
 
 To inspect or recoverably remove stale explicit-error histories before a
 resume, run the cleanup command without `--apply` first. Applied removals are

@@ -7,15 +7,21 @@ from langchain_core.tools import tool
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from omni_agent.brain import get_brain_llm
 from omni_agent.budget_aware_executor import BudgetAwareAgentExecutor
-from omni_agent.tool.Audio.audio_qa import audio_global_caption, audio_ASR
-from omni_agent.tool.Video.video_qa import video_global_qa, video_clip_qa
-from omni_agent.tool.Video.video_base import video_metadata
-from omni_agent.tool.Audio.audio_event_tools import Audio_EventList, Audio_EventLocation, audio_qa
+from omni_agent.tool_registry import (
+    ToolSelectionConfig,
+    default_tools,
+    default_user_template,
+)
 
-def build_agent(max_iterations: int = 6, *, verbose: bool = True) -> AgentExecutor:
+def build_agent(
+    max_iterations: int = 6,
+    *,
+    verbose: bool = True,
+    tool_selection: ToolSelectionConfig | None = None,
+) -> AgentExecutor:
 
     llm = get_brain_llm()
-    tools = [audio_global_caption, audio_qa, video_global_qa, video_clip_qa, video_metadata, Audio_EventList, Audio_EventLocation, audio_ASR]
+    tools = tool_selection.tools() if tool_selection else default_tools()
    
 
     system_prompt = """
@@ -50,35 +56,9 @@ def build_agent(max_iterations: int = 6, *, verbose: bool = True) -> AgentExecut
     explanation high-level and user-friendly.
     """
 
-    user_template = """
-    You are given a video and a question. Carefully read the question and think
-    about how to combine AUDIO and VIDEO information to answer it.
-
-    Tool usage guidelines for this task:
-    - For a high-level understanding of the audio (topics, structure, key events),
-    you can use audio_global_caption.
-    - For detailed questions about what is said or heard, you can use audio_qa
-    and/or audio_ASR.
-    - When you care about WHEN things happen in the audio, prefer:
-    - Audio_EventList to get a rough timeline of major audio events.
-    - Audio_EventLocation to locate specific events or phrases by time.
-    - For visual understanding of the whole video, use video_global_qa.
-    - For fine-grained visual details in a short time range, use video_clip_qa.
-    If you need to choose or validate time ranges, call video_metadata to check
-    the total duration and pick valid integer ranges.
-
-    Remember:
-    - Use audio to find time and content first whenever possible, then inspect
-    the corresponding visuals: from listen to look.
-    - Plan your tool calls, but you are free to adjust the plan based on what
-    you observe from previous tools.
-
-    Video path:
-    {video_path}
-
-    User question:
-    {question}
-    """.strip()
+    user_template = (
+        tool_selection.user_template if tool_selection else default_user_template()
+    )
 
     prompt = ChatPromptTemplate.from_messages(
         [

@@ -21,6 +21,11 @@ from omni_agent.config import (
     GEMINI_TIMEOUT,
     YOUR_API_KEY_GEMINI,
 )
+from omni_agent.latency import (
+    finish_model_attempt,
+    model_component,
+    start_model_attempt,
+)
 from omni_agent.tracing import active_trace_recorder
 
 
@@ -140,46 +145,54 @@ def call_gemini_with_media(
     text_first = False
 
     last_error: Exception | None = None
-    for attempt in range(1, GEMINI_MAX_RETRIES + 1):
-        data = _request_payload(
-            media_part,
-            prompt,
-            system_prompt=system_prompt,
-            text_first=text_first,
-        )
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=data,
-                timeout=GEMINI_TIMEOUT,
+    with model_component("perception"):
+        for attempt in range(1, GEMINI_MAX_RETRIES + 1):
+            data = _request_payload(
+                media_part,
+                prompt,
+                system_prompt=system_prompt,
+                text_first=text_first,
             )
-            if not response.ok:
-                raise GeminiAPIError(response.status_code, response.text)
-            answer = _response_text(response.json())
-            if trace_call is not None:
-                trace_call["response"] = answer
-                trace_call["attempts"] = attempt
-            return answer
-        except Exception as exc:
-            last_error = exc
-            if isinstance(exc, GeminiAPIError) and PART_ONEOF_ERROR in exc.body:
-                # Some instances behind the compatible gateway intermittently
-                # discard a text Part when it follows inlineData. Both orders
-                # are valid Gemini REST, so retry using text first.
-                text_first = True
-            if attempt >= GEMINI_MAX_RETRIES or not _is_retryable(exc):
-                break
-            delay = min(
-                GEMINI_RETRY_DELAY_S * (2 ** (attempt - 1)),
-                GEMINI_RETRY_MAX_DELAY_S,
-            )
-            print(
-                f"[warn] Gemini attempt {attempt}/{GEMINI_MAX_RETRIES} failed: "
-                f"{exc}. Retrying in {delay:g}s.",
-                flush=True,
-            )
-            time.sleep(delay)
+            start_model_attempt()
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=GEMINI_TIMEOUT,
+                )
+                if not response.ok:
+                    raise GeminiAPIError(response.status_code, response.text)
+                response_payload = response.json()
+                answer = _response_text(response_payload)
+                finish_model_attempt(success=True)
+                if trace_call is not None:
+                    trace_call["response"] = answer
+                    trace_call["usage_metadata"] = response_payload.get(
+                        "usageMetadata"
+                    )
+                    trace_call["attempts"] = attempt
+                return answer
+            except Exception as exc:
+                finish_model_attempt(success=False)
+                last_error = exc
+                if isinstance(exc, GeminiAPIError) and PART_ONEOF_ERROR in exc.body:
+                    # Some instances behind the compatible gateway intermittently
+                    # discard a text Part when it follows inlineData. Both orders
+                    # are valid Gemini REST, so retry using text first.
+                    text_first = True
+                if attempt >= GEMINI_MAX_RETRIES or not _is_retryable(exc):
+                    break
+                delay = min(
+                    GEMINI_RETRY_DELAY_S * (2 ** (attempt - 1)),
+                    GEMINI_RETRY_MAX_DELAY_S,
+                )
+                print(
+                    f"[warn] Gemini attempt {attempt}/{GEMINI_MAX_RETRIES} failed: "
+                    f"{exc}. Retrying in {delay:g}s.",
+                    flush=True,
+                )
+                time.sleep(delay)
 
     if trace_call is not None:
         trace_call["error"] = f"{type(last_error).__name__}: {last_error}"

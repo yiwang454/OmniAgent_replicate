@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "experiment": "minus_c",
+  "label": "−C",
+  "enabled_groups": ["Q", "E", "A", "M"],
+  "enabled_tools": ["audio_qa", "video_global_qa", "video_clip_qa", "video_metadata", "Audio_EventList", "Audio_EventLocation", "audio_ASR"],
+  "prompt_template": "prompts/minus_c.txt"
+}

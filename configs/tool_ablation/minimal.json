@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "experiment": "minimal",
+  "label": "Minimal",
+  "enabled_groups": ["C", "Q"],
+  "enabled_tools": ["audio_global_caption", "audio_qa", "video_global_qa", "video_clip_qa"],
+  "prompt_template": "prompts/minimal.txt"
+}

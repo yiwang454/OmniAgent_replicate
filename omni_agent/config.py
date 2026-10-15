@@ -16,6 +16,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_environment() -> None:
+    explicit_env_file = os.getenv("OMNIAGENT_ENV_FILE", "").strip()
+    if explicit_env_file:
+        env_path = Path(explicit_env_file).expanduser()
+        if not env_path.is_file():
+            raise RuntimeError(f"OMNIAGENT_ENV_FILE does not exist: {env_path}")
+        load_dotenv(env_path, override=True)
+        return
     load_dotenv(_REPO_ROOT / ".env", override=False)
 
 

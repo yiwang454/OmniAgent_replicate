@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,15 +11,23 @@ from pathlib import Path
 from typing import Any
 
 from omni_agent.agent_builder import build_agent
+from omni_agent.caption_cache import AUDIO_GLOBAL_CAPTION_PROMPT, activate_caption_cache
+from omni_agent.run_metrics import build_question_metrics
+from omni_agent.tool_registry import ToolSelectionConfig, load_tool_selection_config
 from omni_agent.tracing import (
     RolloutTraceRecorder,
     activate_trace_recorder,
     json_safe,
+    summarize_token_usage,
 )
+from omni_agent.latency import sample_latency
 
 
 DEFAULT_INPUT_JSONL = Path(
     "/mnt/ceph_rbd/data/avqa_project/daily_omni/daily_omni_cuts_v3.jsonl"
+)
+DEFAULT_MEDIA_MANIFEST_JSONL = Path(
+    "/mnt/ceph_rbd/data/avqa_project/daily_omni/daily_omni_cuts_v3_sepAV.jsonl"
 )
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_BENCHMARK_WORKERS = 4
@@ -78,16 +87,73 @@ def build_question_prompt(question: str, options: list[Any]) -> str:
     return f"{question}\n{choices}\n{ANSWER_INSTRUCTION}"
 
 
-def build_input(cut: dict[str, Any]) -> dict[str, str]:
-    """Map one DailyOmni cut to the existing OmniAgent input contract."""
-    supervision, custom = supervision_data(cut)
+def _media_paths(cut: dict[str, Any]) -> tuple[str | None, str | None]:
+    _, custom = supervision_data(cut)
     recording = cut.get("recording") or {}
     sources = recording.get("sources") or []
-    source_video = sources[0].get("source") if sources and isinstance(sources[0], dict) else None
+    recording_video = (
+        sources[0].get("source")
+        if sources and isinstance(sources[0], dict)
+        else None
+    )
+    return custom.get("video_path") or recording_video, custom.get("audio_path")
 
+
+def _ensure_media_link(link: Path, target: Path) -> None:
+    if link.is_symlink():
+        if link.resolve() == target.resolve():
+            return
+        raise ValueError(f"Media alias points to the wrong source: {link}")
+    if link.exists():
+        raise ValueError(f"Refusing to replace non-symlink media alias: {link}")
+    temporary = link.with_name(f".{link.name}.{os.getpid()}.tmp")
+    try:
+        temporary.symlink_to(target.resolve())
+        temporary.replace(link)
+    finally:
+        if temporary.is_symlink():
+            temporary.unlink()
+
+
+def prepare_sepav_alias(
+    sample_id: str,
+    video_path: str,
+    audio_path: str,
+    alias_dir: Path,
+) -> str:
+    """Expose sepAV video/audio through the unchanged single-path tool contract."""
+    if Path(sample_id).name != sample_id:
+        raise ValueError(f"Unsafe sample ID for media alias: {sample_id!r}")
+    video_source = Path(video_path)
+    audio_source = Path(audio_path)
+    if not video_source.is_file() or not audio_source.is_file():
+        raise FileNotFoundError(
+            f"Missing sepAV source for {sample_id}: video={video_source}, audio={audio_source}"
+        )
+    alias_dir.mkdir(parents=True, exist_ok=True)
+    video_alias = alias_dir / f"{sample_id}.mp4"
+    audio_alias = alias_dir / f"{sample_id}.wav"
+    _ensure_media_link(video_alias, video_source)
+    _ensure_media_link(audio_alias, audio_source)
+    return str(video_alias)
+
+
+def build_input(
+    cut: dict[str, Any],
+    *,
+    media_cut: dict[str, Any] | None = None,
+    media_alias_dir: Path | None = None,
+) -> dict[str, str]:
+    """Map one DailyOmni cut to the existing OmniAgent input contract."""
+    supervision, custom = supervision_data(cut)
     question = supervision.get("text") or custom.get("Question") or custom.get("question")
     options = custom.get("options") or custom.get("Choice") or []
-    video_path = custom.get("video_path") or source_video
+    media_source = media_cut or cut
+    video_path, audio_path = _media_paths(media_source)
+    if audio_path and media_alias_dir is not None:
+        video_path = prepare_sepav_alias(
+            cut_id(cut), str(video_path), str(audio_path), media_alias_dir
+        )
     if not question or not options or not video_path:
         raise ValueError(
             f"Missing DailyOmni fields for cut {cut.get('id')}: "
@@ -141,6 +207,18 @@ def _perception_calls_between(
     return [call for call in perception_calls if lower < call["sequence"] < upper]
 
 
+def _cache_calls_between(
+    cache_calls: list[dict[str, Any]],
+    planner_call: dict[str, Any] | None,
+    next_planner_call: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if planner_call is None:
+        return []
+    lower = planner_call["sequence"]
+    upper = next_planner_call["sequence"] if next_planner_call else float("inf")
+    return [call for call in cache_calls if lower < call["sequence"] < upper]
+
+
 def build_turn_trace(
     result: dict[str, Any], recorder: RolloutTraceRecorder
 ) -> list[dict[str, Any]]:
@@ -153,6 +231,10 @@ def build_turn_trace(
         action, observation = step
         planner_call = _planner_call_for_step(planner_calls, index)
         next_planner_call = _planner_call_for_step(planner_calls, index + 1)
+        cache_calls = _cache_calls_between(
+            recorder.caption_cache_calls, planner_call, next_planner_call
+        )
+        cache_call = cache_calls[0] if cache_calls else {}
         trace.append(
             {
                 "turn_id": index + 1,
@@ -166,11 +248,40 @@ def build_turn_trace(
                 "planner_prompt": (planner_call or {}).get("messages"),
                 "planner_response": (planner_call or {}).get("response"),
                 "planner_response_text": (planner_call or {}).get("response_text"),
+                "planner_token_usage": (planner_call or {}).get("usage_metadata"),
                 "perception_calls": json_safe(
                     _perception_calls_between(
                         recorder.perception_calls, planner_call, next_planner_call
                     )
                 ),
+                "perception_backend": cache_call.get("perception_backend"),
+                "caption_cache_hit": cache_call.get("caption_cache_hit"),
+                "caption_cache_path": cache_call.get("caption_cache_path"),
+                "caption_cache_source_results": cache_call.get(
+                    "caption_cache_source_results"
+                ),
+                "caption_cache_source_rank": cache_call.get(
+                    "caption_cache_source_rank"
+                ),
+                "caption_cache_source_kind": cache_call.get(
+                    "caption_cache_source_kind"
+                ),
+                "caption_cache_source_backend": cache_call.get(
+                    "caption_cache_source_backend"
+                ),
+                "caption_cache_source_model": cache_call.get(
+                    "caption_cache_source_model"
+                ),
+                "caption_cache_source_token_usage": cache_call.get(
+                    "caption_cache_source_token_usage"
+                ),
+                "caption_cache_source_latency_seconds": cache_call.get(
+                    "caption_cache_source_latency_seconds"
+                ),
+                "caption_cache_lookup_seconds": cache_call.get(
+                    "caption_cache_lookup_seconds"
+                ),
+                "caption_source_mode": "cache" if cache_call else None,
             }
         )
 
@@ -188,6 +299,7 @@ def build_turn_trace(
             "planner_prompt": (final_call or {}).get("messages"),
             "planner_response": (final_call or {}).get("response"),
             "planner_response_text": (final_call or {}).get("response_text"),
+            "planner_token_usage": (final_call or {}).get("usage_metadata"),
             "perception_calls": json_safe(
                 _perception_calls_between(recorder.perception_calls, final_call, None)
             ),
@@ -202,18 +314,27 @@ def invoke_agent(
     *,
     max_iterations: int,
     print_steps: bool,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    sample_id: str | None = None,
+    tool_selection: ToolSelectionConfig | None = None,
+    caption_cache_dir: Path | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     """Run one isolated rollout and return its result and structured trace."""
     os.makedirs("Cache", exist_ok=True)
     # A fresh executor also gives every benchmark question fresh conversation memory.
-    agent = build_agent(max_iterations=max_iterations, verbose=print_steps)
+    agent = build_agent(
+        max_iterations=max_iterations,
+        verbose=print_steps,
+        tool_selection=tool_selection,
+    )
     recorder = RolloutTraceRecorder()
-    with activate_trace_recorder(recorder):
+    with activate_trace_recorder(recorder), activate_caption_cache(
+        caption_cache_dir, sample_id
+    ):
         result = agent.invoke(
             {"video_path": video_path, "question": question},
             config={"callbacks": [recorder]},
         )
-    return result, build_turn_trace(result, recorder)
+    return result, build_turn_trace(result, recorder), summarize_token_usage(recorder)
 
 
 def write_question_json(output_dir: Path, row: dict[str, Any]) -> Path:
@@ -292,22 +413,70 @@ def run_benchmark_sample(
     *,
     max_iterations: int,
     print_steps: bool,
+    media_cut: dict[str, Any] | None = None,
+    media_alias_dir: Path | None = None,
+    tool_selection: ToolSelectionConfig | None = None,
+    caption_cache_dir: Path | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Run one sample independently so benchmark samples can execute concurrently."""
+    latency_tracker = None
     try:
-        payload = build_input(cut)
-        result, turn_trace = invoke_agent(
-            payload["video_path"],
-            payload["question"],
-            max_iterations=max_iterations,
-            print_steps=print_steps,
-        )
+        with sample_latency() as latency_tracker:
+            payload = build_input(
+                cut, media_cut=media_cut, media_alias_dir=media_alias_dir
+            )
+            invocation = invoke_agent(
+                payload["video_path"],
+                payload["question"],
+                max_iterations=max_iterations,
+                print_steps=print_steps,
+                sample_id=cut_id(cut),
+                tool_selection=tool_selection,
+                caption_cache_dir=caption_cache_dir,
+            )
+        # Retain compatibility with test doubles and older local callers that
+        # return the historical two-tuple.
+        if len(invocation) == 3:
+            result, turn_trace, token_usage = invocation
+        else:
+            result, turn_trace = invocation
+            token_usage = {"planner": {}, "perception": {}}
         row = build_result_row(cut, str(result.get("output", "")))
+        if tool_selection is not None:
+            row["question_data"]["tool_selection"] = {
+                "experiment": tool_selection.experiment,
+                "enabled_groups": list(tool_selection.enabled_groups),
+                "enabled_tools": list(tool_selection.enabled_tool_names),
+                "prompt_template": str(tool_selection.prompt_template_path),
+            }
         row["question_data"]["turn_trace"] = turn_trace
+        row["question_data"]["token_usage"] = token_usage
+        row["question_data"]["latency"] = latency_tracker.summary(complete=True)
+        row["question_data"]["metrics"] = build_question_metrics(row["question_data"])
         return row, None
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         row = build_result_row(cut, f"[ERROR] {error}")
+        if tool_selection is not None:
+            row["question_data"]["tool_selection"] = {
+                "experiment": tool_selection.experiment,
+                "enabled_groups": list(tool_selection.enabled_groups),
+                "enabled_tools": list(tool_selection.enabled_tool_names),
+                "prompt_template": str(tool_selection.prompt_template_path),
+            }
+        if latency_tracker is not None:
+            row["question_data"]["latency"] = latency_tracker.summary(complete=False)
+        else:
+            row["question_data"]["latency"] = {
+                "wall_clock_seconds": None,
+                "retry_adjusted_seconds": None,
+                "successful_model_call_seconds": 0.0,
+                "planner_successful_calls": 0,
+                "perception_successful_calls": 0,
+            }
+        row["question_data"]["token_usage"] = summarize_token_usage(
+            RolloutTraceRecorder()
+        )
         row["question_data"]["turn_trace"] = [
             {
                 "turn_id": 1,
@@ -322,11 +491,78 @@ def run_benchmark_sample(
                 "planner_response_text": None,
             }
         ]
+        row["question_data"]["metrics"] = build_question_metrics(row["question_data"])
         return row, error
+
+
+def _write_or_validate_run_config(
+    args: argparse.Namespace,
+    tool_selection: ToolSelectionConfig,
+    caption_cache_dir: Path | None,
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "experiment": tool_selection.experiment,
+        "enabled_groups": list(tool_selection.enabled_groups),
+        "enabled_tools": list(tool_selection.enabled_tool_names),
+        "experiment_config": str(tool_selection.config_path),
+        "experiment_config_sha256": hashlib.sha256(
+            tool_selection.config_path.read_bytes()
+        ).hexdigest(),
+        "prompt_template": str(tool_selection.prompt_template_path),
+        "prompt_template_sha256": hashlib.sha256(
+            tool_selection.user_template.encode("utf-8")
+        ).hexdigest(),
+        "input_jsonl": str(args.input_jsonl.resolve()),
+        "media_manifest_jsonl": (
+            str(args.media_manifest_jsonl.resolve())
+            if args.media_manifest_jsonl is not None
+            else None
+        ),
+        "caption_cache_dir": str(caption_cache_dir) if caption_cache_dir else None,
+        "max_iterations": args.max_iterations,
+    }
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    path = args.output_dir / "run_config.json"
+    if path.is_file():
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if existing != payload:
+            raise ValueError(f"Output directory belongs to a different run: {path}")
+        return
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
 
 
 def run_benchmark(args: argparse.Namespace) -> None:
     all_cuts = read_jsonl(args.input_jsonl)
+    tool_selection = getattr(args, "tool_selection", None)
+    caption_cache_dir = getattr(args, "caption_cache_dir", None)
+    if caption_cache_dir is not None:
+        caption_cache_dir = caption_cache_dir.expanduser().resolve()
+        if tool_selection is None or not tool_selection.has_caption_tool:
+            raise ValueError(
+                "--caption-cache-dir is allowed only when audio_global_caption (group C) "
+                "is enabled by --experiment-config"
+            )
+    if tool_selection is not None:
+        _write_or_validate_run_config(args, tool_selection, caption_cache_dir)
+
+    media_manifest = getattr(args, "media_manifest_jsonl", None)
+    media_by_id: dict[str, dict[str, Any]] = {}
+    if media_manifest is not None:
+        media_rows = read_jsonl(media_manifest)
+        media_by_id = {cut_id(cut): cut for cut in media_rows}
+        missing_media = sorted(
+            cut_id(cut) for cut in all_cuts if cut_id(cut) not in media_by_id
+        )
+        if missing_media:
+            raise ValueError(
+                f"Media manifest lacks {len(missing_media)} selected IDs, e.g. "
+                f"{missing_media[:5]}"
+            )
     cuts = all_cuts
     if args.sample_id:
         requested = set(args.sample_id)
@@ -338,7 +574,33 @@ def run_benchmark(args: argparse.Namespace) -> None:
     if args.limit is not None:
         cuts = cuts[: args.limit]
 
+    if caption_cache_dir is not None:
+        manifest_path = caption_cache_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("cache_kind") != "omniagent_audio_global_caption":
+            raise ValueError(f"Unexpected caption cache kind: {manifest_path}")
+        if manifest.get("caption_prompt") != AUDIO_GLOBAL_CAPTION_PROMPT:
+            raise ValueError(f"Caption cache prompt mismatch: {manifest_path}")
+        missing_cache = [
+            cut_id(cut)
+            for cut in cuts
+            if not (caption_cache_dir / f"{cut_id(cut)}.json").is_file()
+        ]
+        if missing_cache:
+            raise ValueError(
+                f"Caption cache lacks {len(missing_cache)} selected IDs, e.g. "
+                f"{missing_cache[:5]}"
+            )
+
     print(f"Loaded {len(cuts)} DailyOmni sample(s) from {args.input_jsonl}")
+    if media_manifest is not None:
+        print(f"Media sources: {media_manifest}")
+    if tool_selection is not None:
+        print(
+            f"Experiment: {tool_selection.experiment}; "
+            f"tools={','.join(tool_selection.enabled_tool_names)}"
+        )
+    print(f"Caption cache: {caption_cache_dir or 'disabled'}")
     print(f"Per-question rollouts: {args.output_dir}")
     print(f"Aggregate artifact: {args.output_dir / OUTPUT_FILENAME}")
 
@@ -359,6 +621,14 @@ def run_benchmark(args: argparse.Namespace) -> None:
         for cut in all_cuts
         if cut_id(cut) in completed_ids
     ]
+    # Recompute derived metrics on resume so reporting fixes do not require
+    # rerunning expensive model calls. The raw response, trace, and usage stay
+    # unchanged.
+    for row in preserved_rows:
+        row["question_data"]["metrics"] = build_question_metrics(
+            row["question_data"]
+        )
+        write_question_json(args.output_dir, row)
     output_path = write_output_jsonl(args.output_dir, preserved_rows)
     if resume:
         retry_count = sum(
@@ -383,6 +653,10 @@ def run_benchmark(args: argparse.Namespace) -> None:
                 cut,
                 max_iterations=args.max_iterations,
                 print_steps=args.print_steps,
+                media_cut=media_by_id.get(sample_id),
+                media_alias_dir=getattr(args, "media_alias_dir", None),
+                tool_selection=tool_selection,
+                caption_cache_dir=caption_cache_dir,
             )
             future_metadata[future] = (index, sample_id)
 
@@ -412,7 +686,7 @@ def run_single(args: argparse.Namespace) -> None:
         video_path = args.video_path
         question = args.question
 
-    result, _ = invoke_agent(
+    result, _, _ = invoke_agent(
         video_path,
         question,
         max_iterations=args.max_iterations,
@@ -431,6 +705,34 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_INPUT_JSONL,
         help=f"DailyOmni cut JSONL (default: {DEFAULT_INPUT_JSONL}).",
+    )
+    parser.add_argument(
+        "--media-manifest-jsonl",
+        type=Path,
+        default=None,
+        help=(
+            "Manifest supplying video_path/audio_path by question ID; questions and "
+            "labels still come from --input-jsonl. Ablation launchers use "
+            f"{DEFAULT_MEDIA_MANIFEST_JSONL}."
+        ),
+    )
+    parser.add_argument(
+        "--experiment-config",
+        type=Path,
+        default=None,
+        help="Tool-selection ablation JSON config.",
+    )
+    parser.add_argument(
+        "--caption-cache-dir",
+        type=Path,
+        default=None,
+        help="Question-scoped audio_global_caption cache (requires group C).",
+    )
+    parser.add_argument(
+        "--media-alias-dir",
+        type=Path,
+        default=Path("Cache/sepav_media"),
+        help="Directory for video/audio symlinks used by unchanged tool interfaces.",
     )
     parser.add_argument(
         "--output-dir",
@@ -490,6 +792,27 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-iterations must be at least 1")
     if args.workers < 1:
         parser.error("--workers must be at least 1")
+    if not args.input_jsonl.is_file():
+        parser.error(f"--input-jsonl does not exist: {args.input_jsonl}")
+    if args.media_manifest_jsonl is not None and not args.media_manifest_jsonl.is_file():
+        parser.error(
+            f"--media-manifest-jsonl does not exist: {args.media_manifest_jsonl}"
+        )
+    if args.experiment_config is not None:
+        try:
+            args.tool_selection = load_tool_selection_config(args.experiment_config)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            parser.error(str(exc))
+    else:
+        args.tool_selection = None
+    if args.caption_cache_dir is not None and not args.caption_cache_dir.is_dir():
+        parser.error(f"--caption-cache-dir does not exist: {args.caption_cache_dir}")
+    if args.caption_cache_dir is not None and (
+        args.tool_selection is None or not args.tool_selection.has_caption_tool
+    ):
+        parser.error(
+            "--caption-cache-dir requires an experiment config containing group C"
+        )
     return args
 
 

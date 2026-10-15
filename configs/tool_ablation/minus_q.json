@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "experiment": "minus_q",
+  "label": "−Q",
+  "enabled_groups": ["C", "E", "A", "M"],
+  "enabled_tools": ["audio_global_caption", "video_metadata", "Audio_EventList", "Audio_EventLocation", "audio_ASR"],
+  "prompt_template": "prompts/minus_q.txt"
+}

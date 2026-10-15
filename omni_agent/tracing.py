@@ -47,12 +47,122 @@ def _message_dict(message: Any) -> dict[str, Any]:
     }
 
 
+def _number(mapping: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value)
+    return 0
+
+
+def _planner_usage(response: dict[str, Any]) -> dict[str, Any] | None:
+    generations = response.get("generations") or []
+    first = generations[0] if generations else {}
+    if isinstance(first, dict):
+        usage = first.get("usage_metadata")
+        if isinstance(usage, dict):
+            return usage
+        metadata = first.get("response_metadata") or {}
+        if isinstance(metadata, dict):
+            usage = metadata.get("token_usage") or metadata.get("usage")
+            if isinstance(usage, dict):
+                return usage
+    llm_output = response.get("llm_output") or {}
+    if isinstance(llm_output, dict):
+        usage = llm_output.get("token_usage") or llm_output.get("usage")
+        if isinstance(usage, dict):
+            return usage
+    return None
+
+
+def summarize_token_usage(recorder: "RolloutTraceRecorder") -> dict[str, Any]:
+    """Aggregate exact successful planner and Gemini usage for one sample."""
+    planner = {
+        "calls": len(recorder.planner_calls),
+        "calls_with_usage": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 0,
+    }
+    for call in recorder.planner_calls:
+        usage = call.get("usage_metadata")
+        if not isinstance(usage, dict):
+            continue
+        planner["calls_with_usage"] += 1
+        planner["input_tokens"] += _number(usage, "input_tokens", "prompt_tokens")
+        planner["output_tokens"] += _number(
+            usage, "output_tokens", "completion_tokens"
+        )
+        planner["total_tokens"] += _number(usage, "total_tokens")
+        input_details = usage.get("input_token_details") or usage.get(
+            "prompt_tokens_details"
+        ) or {}
+        output_details = usage.get("output_token_details") or usage.get(
+            "completion_tokens_details"
+        ) or {}
+        if isinstance(input_details, dict):
+            planner["cached_input_tokens"] += _number(
+                input_details, "cache_read", "cached_tokens"
+            )
+        if isinstance(output_details, dict):
+            planner["reasoning_output_tokens"] += _number(
+                output_details, "reasoning", "reasoning_tokens"
+            )
+
+    perception = {
+        "calls": len(recorder.perception_calls),
+        "calls_with_usage": 0,
+        "prompt_tokens": 0,
+        "cached_content_tokens": 0,
+        "candidate_tokens": 0,
+        "thoughts_tokens": 0,
+        "tool_use_prompt_tokens": 0,
+        "total_tokens": 0,
+        "prompt_tokens_by_modality": {},
+        "candidate_tokens_by_modality": {},
+    }
+    for call in recorder.perception_calls:
+        usage = call.get("usage_metadata")
+        if not isinstance(usage, dict):
+            continue
+        perception["calls_with_usage"] += 1
+        perception["prompt_tokens"] += _number(usage, "promptTokenCount")
+        perception["cached_content_tokens"] += _number(
+            usage, "cachedContentTokenCount"
+        )
+        perception["candidate_tokens"] += _number(usage, "candidatesTokenCount")
+        perception["thoughts_tokens"] += _number(usage, "thoughtsTokenCount")
+        perception["tool_use_prompt_tokens"] += _number(
+            usage, "toolUsePromptTokenCount"
+        )
+        perception["total_tokens"] += _number(usage, "totalTokenCount")
+        for detail_key, summary_key in (
+            ("promptTokensDetails", "prompt_tokens_by_modality"),
+            ("candidatesTokensDetails", "candidate_tokens_by_modality"),
+        ):
+            details = usage.get(detail_key) or []
+            if not isinstance(details, list):
+                continue
+            target = perception[summary_key]
+            for detail in details:
+                if not isinstance(detail, dict):
+                    continue
+                modality = str(detail.get("modality") or "UNKNOWN")
+                target[modality] = target.get(modality, 0) + _number(
+                    detail, "tokenCount"
+                )
+    return {"planner": planner, "perception": perception}
+
+
 class RolloutTraceRecorder(BaseCallbackHandler):
     """Capture every central planner call and raw Gemini perception call."""
 
     def __init__(self) -> None:
         self.planner_calls: list[dict[str, Any]] = []
         self.perception_calls: list[dict[str, Any]] = []
+        self.caption_cache_calls: list[dict[str, Any]] = []
         self._planner_by_run_id: dict[str, dict[str, Any]] = {}
         self._sequence = 0
         self._lock = threading.Lock()
@@ -123,6 +233,7 @@ class RolloutTraceRecorder(BaseCallbackHandler):
             "generations": generations,
             "llm_output": json_safe(getattr(response, "llm_output", None)),
         }
+        call["usage_metadata"] = _planner_usage(call["response"])
 
     def on_llm_error(
         self,
@@ -153,9 +264,32 @@ class RolloutTraceRecorder(BaseCallbackHandler):
             "system_prompt": system_prompt,
             "prompt": prompt,
             "response": None,
+            "usage_metadata": None,
             "error": None,
         }
         self.perception_calls.append(call)
+        return call
+
+    def record_caption_cache_call(
+        self,
+        *,
+        media_path: str,
+        prompt: str,
+        response: str,
+        lookup_seconds: float,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record a cache observation alongside live perception calls."""
+        call = {
+            "sequence": self._next_sequence(),
+            "perception_backend": "caption_cache",
+            "media_path": media_path,
+            "prompt": prompt,
+            "response": response,
+            "caption_cache_lookup_seconds": round(lookup_seconds, 6),
+            **json_safe(metadata),
+        }
+        self.caption_cache_calls.append(call)
         return call
 
 

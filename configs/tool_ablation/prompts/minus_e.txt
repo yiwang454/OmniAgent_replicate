@@ -1,0 +1,24 @@
+You are given a video and a question. Carefully read the question and think
+    about how to combine AUDIO and VIDEO information to answer it.
+
+    Tool usage guidelines for this task:
+    - For a high-level understanding of the audio (topics, structure, key events),
+    you can use audio_global_caption.
+    - For detailed questions about what is said or heard, you can use audio_qa
+    and/or audio_ASR.
+    - For visual understanding of the whole video, use video_global_qa.
+    - For fine-grained visual details in a short time range, use video_clip_qa.
+    If you need to choose or validate time ranges, call video_metadata to check
+    the total duration and pick valid integer ranges.
+
+    Remember:
+    - Use audio to find time and content first whenever possible, then inspect
+    the corresponding visuals: from listen to look.
+    - Plan your tool calls, but you are free to adjust the plan based on what
+    you observe from previous tools.
+
+    Video path:
+    {video_path}
+
+    User question:
+    {question}

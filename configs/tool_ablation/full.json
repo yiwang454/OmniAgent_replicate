@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "experiment": "full_selectedval125_measured",
+  "label": "Full OmniAgent, all original tools",
+  "enabled_groups": ["C", "Q", "E", "A", "M"],
+  "enabled_tools": [
+    "audio_global_caption",
+    "audio_qa",
+    "video_global_qa",
+    "video_clip_qa",
+    "video_metadata",
+    "Audio_EventList",
+    "Audio_EventLocation",
+    "audio_ASR"
+  ],
+  "prompt_template": "prompts/base.txt"
+}

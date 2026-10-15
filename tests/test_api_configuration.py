@@ -6,10 +6,13 @@ import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from omni_agent import config
 from omni_agent import gemini_api
+from omni_agent import latency
+from omni_agent.tracing import RolloutTraceRecorder, activate_trace_recorder
 
 
 class _FakeResponse:
@@ -28,7 +31,17 @@ class _FakeResponse:
                         ]
                     }
                 }
-            ]
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "candidatesTokenCount": 12,
+                "thoughtsTokenCount": 8,
+                "totalTokenCount": 120,
+                "promptTokensDetails": [
+                    {"modality": "VIDEO", "tokenCount": 90},
+                    {"modality": "TEXT", "tokenCount": 10},
+                ],
+            },
         }
 
 
@@ -45,6 +58,32 @@ class _FakeErrorResponse:
 
 
 class ApiConfigurationTests(unittest.TestCase):
+    def test_explicit_env_file_must_exist(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"OMNIAGENT_ENV_FILE": "/definitely/missing/omniagent.env"},
+                clear=False,
+            ),
+            self.assertRaisesRegex(RuntimeError, "OMNIAGENT_ENV_FILE does not exist"),
+        ):
+            config._load_environment()
+
+    def test_explicit_env_file_overrides_inherited_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_path = Path(directory) / ".env"
+            env_path.write_text("ELM_API_KEY=explicit-key\n", encoding="utf-8")
+            with patch.dict(
+                "os.environ",
+                {
+                    "OMNIAGENT_ENV_FILE": str(env_path),
+                    "ELM_API_KEY": "old-key",
+                },
+                clear=False,
+            ):
+                config._load_environment()
+                self.assertEqual(config.os.environ["ELM_API_KEY"], "explicit-key")
+
     def test_all_multimodal_routes_are_fixed_to_gemini_25_flash(self):
         self.assertEqual(config.GEMINI_MODEL, "gemini-2.5-flash")
         self.assertEqual(config.VIDEO_TOOL, "GEMINI")
@@ -177,6 +216,45 @@ class ApiConfigurationTests(unittest.TestCase):
                     gemini_api.call_gemini_with_media(media.name, "describe")
 
         self.assertEqual(post.call_count, 1)
+
+    def test_gemini_usage_and_retry_adjusted_latency_are_recorded(self):
+        error = _FakeErrorResponse()
+        error.status_code = 429
+        error.text = '{"error":{"message":"rate limit exceeded"}}'
+        recorder = RolloutTraceRecorder()
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as media:
+            media.write(b"test media")
+            media.flush()
+            with (
+                patch.object(gemini_api, "YOUR_API_KEY_GEMINI", "test-key"),
+                patch.object(gemini_api, "GEMINI_BASE_URL", "https://gemini.example"),
+                patch.object(gemini_api, "GEMINI_MAX_RETRIES", 2),
+                patch.object(gemini_api, "GEMINI_RETRY_DELAY_S", 0),
+                patch.object(
+                    gemini_api.requests,
+                    "post",
+                    side_effect=[error, _FakeResponse()],
+                ),
+                patch.object(gemini_api.time, "sleep"),
+                patch.object(
+                    latency.time,
+                    "perf_counter",
+                    side_effect=[0.0, 2.0, 5.0, 9.0, 10.0],
+                ),
+                latency.sample_latency() as tracker,
+                activate_trace_recorder(recorder),
+            ):
+                answer = gemini_api.call_gemini_with_media(media.name, "describe")
+                summary = tracker.summary(complete=True)
+
+        self.assertEqual(answer, "answer")
+        self.assertEqual(
+            recorder.perception_calls[0]["usage_metadata"]["totalTokenCount"],
+            120,
+        )
+        self.assertEqual(summary["wall_clock_seconds"], 10.0)
+        self.assertEqual(summary["retry_adjusted_seconds"], 5.0)
+        self.assertEqual(summary["perception_successful_calls"], 1)
 
     def test_brain_keeps_model_and_omits_custom_base_url(self):
         calls = []

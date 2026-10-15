@@ -14,7 +14,7 @@ from uuid import uuid4
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from omni_agent.tracing import RolloutTraceRecorder
+from omni_agent.tracing import RolloutTraceRecorder, summarize_token_usage
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -282,6 +282,62 @@ class DailyOmniRunnerTests(unittest.TestCase):
             trace[0]["perception_calls"][0]["response"], "perception response"
         )
         self.assertEqual(trace[1]["planner_response_text"], "<answer>B</answer>")
+
+    def test_exact_planner_and_perception_usage_is_summarized(self):
+        recorder = RolloutTraceRecorder()
+        run_id = uuid4()
+        recorder.on_chat_model_start(
+            {"name": "brain"}, [[HumanMessage(content="question")]], run_id=run_id
+        )
+        recorder.on_llm_end(
+            LLMResult(
+                generations=[
+                    [
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="answer",
+                                usage_metadata={
+                                    "input_tokens": 100,
+                                    "output_tokens": 20,
+                                    "total_tokens": 120,
+                                    "input_token_details": {"cache_read": 25},
+                                    "output_token_details": {"reasoning": 10},
+                                },
+                            )
+                        )
+                    ]
+                ]
+            ),
+            run_id=run_id,
+        )
+        perception = recorder.start_perception_call(
+            media_path="video.mp4",
+            prompt="look",
+            system_prompt=None,
+            model="gemini-2.5-flash",
+            fps=2,
+        )
+        perception["usage_metadata"] = {
+            "promptTokenCount": 50,
+            "candidatesTokenCount": 5,
+            "thoughtsTokenCount": 3,
+            "totalTokenCount": 58,
+            "promptTokensDetails": [
+                {"modality": "VIDEO", "tokenCount": 40},
+                {"modality": "TEXT", "tokenCount": 10},
+            ],
+        }
+
+        usage = summarize_token_usage(recorder)
+
+        self.assertEqual(usage["planner"]["input_tokens"], 100)
+        self.assertEqual(usage["planner"]["cached_input_tokens"], 25)
+        self.assertEqual(usage["planner"]["reasoning_output_tokens"], 10)
+        self.assertEqual(usage["perception"]["total_tokens"], 58)
+        self.assertEqual(
+            usage["perception"]["prompt_tokens_by_modality"],
+            {"VIDEO": 40, "TEXT": 10},
+        )
 
 
 if __name__ == "__main__":
